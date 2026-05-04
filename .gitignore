@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude / agent state
+.claude/
+.anthropic/
+
+# Local notes (so the user can scratch without committing)
+NOTES.md
+notes/
+
+# Large or transient files (uncomment if needed later)
+# *.bin
+# *.prof
