@@ -7,7 +7,7 @@ experiment that validated the patch.
 ## Layout
 
 ```
-secagg-investigation/
+secagg/
 ├── data/
 │   └── profiles/             ← py-spy speedscope JSONs
 └── reproducing/
