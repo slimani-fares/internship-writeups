@@ -1,4 +1,4 @@
-# Vector Dispatch Investigation
+# Vector Dispatch
 
 A writeup of a performance investigation into declearn's `Vector`
 abstraction, looking at the per-tensor Python dispatch tax that shows

@@ -1,4 +1,4 @@
-# DP-SGD Investigation
+# DP-SGD
 
 py-spy profiling of a DP-SGD FedAvg run in declearn with the RDP
 accountant, looking at how much overhead the per-step privacy-budget

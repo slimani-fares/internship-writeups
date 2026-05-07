@@ -1,4 +1,4 @@
-# SecAgg Investigation
+# SecAgg
 
 A writeup of a performance investigation into declearn's masking-variant
 SecAgg, from the initial profiling pass through the controlled

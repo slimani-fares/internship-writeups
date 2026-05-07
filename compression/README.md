@@ -1,4 +1,4 @@
-# Compression Investigation
+# Compression
 
 py-spy profiling of a torch FedAvg run in declearn over the
 WebSockets transport, looking at how much overhead
