@@ -131,4 +131,4 @@ The per-run gain is small, but the patch sits in core Vector
 arithmetic rather than behind an optional flag or specific
 algorithm setting. Every torch FedAvg run picks it up by default,
 across regularizers, SCAFFOLD, fairness, and any future algorithm
-built on the same Vector primitives. Worth upstreaming.
+built on the same Vector primitives.
