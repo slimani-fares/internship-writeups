@@ -12,7 +12,7 @@ first.
 Cross-N py-spy profiling of a torch FedAvg run, varying only N
 (number of simulated clients). Profiled at N = 5 and N = 100.
 
-**Setup:** `config_fedavg_torch.toml`, 2 rounds, batch 48, 1 epoch,
+**Setup:** [`config_fedavg_torch.toml`](reproducing/config_fedavg_torch.toml), 2 rounds, batch 48, 1 epoch,
 IID split (seed 42). Profiled with
 `py-spy record --subprocesses --format speedscope` at 100 Hz.
 
