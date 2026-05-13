@@ -1,17 +1,17 @@
 """Translate benchmark parameters into a fully-instantiated `BenchmarkSpec`.
 
 This is the layer where parameter interpretation lives: a small set of
-high-level toggles ("torch + DP + 5 clients") expand into concrete
+high-level toggles ("torch + SCAFFOLD + 5 clients") expand into concrete
 declearn objects (Model, FLOptimConfig, FLRunConfig, datasets, optional
 SecAgg configs). Validation rejects parameter combinations that declearn
-or the optional dependencies cannot honor (e.g. DP on non-torch backends).
+or the optional dependencies cannot honor (e.g. SCAFFOLD on non-torch
+backends in the v1 suite).
 """
 
 import importlib
 from typing import List, Optional
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
 from declearn.dataset import InMemoryDataset
 from declearn.main.config import FLOptimConfig, FLRunConfig
 from declearn.model.api import Model
@@ -25,32 +25,27 @@ from benchmarks.workload.data import (
 )
 from benchmarks.workload.spec import BenchmarkSpec, ClientSpec
 
-__all__ = ["build_benchmark"]
+__all__ = ["BACKEND_LAYOUT", "build_benchmark"]
 
 
-_VALID_BACKENDS = ("torch", "tensorflow", "sklearn", "haiku")
-_VALID_REGULARIZERS = (None, "lasso", "ridge", "fedprox")
-_VALID_SECAGG = (None, "masking", "joye-libert")
+_VALID_BACKENDS = ("torch", "tensorflow")
+_VALID_REGULARIZERS = (None, "ridge", "fedprox")
+_VALID_SECAGG = (None, "masking")
 
-_BACKEND_LAYOUT = {
+BACKEND_LAYOUT = {
     "torch": "chw",
     "tensorflow": "hwc",
-    "sklearn": "flat",
-    "haiku": "hwc",
 }
 
 _BACKEND_MODEL_MODULE = {
     "torch": "benchmarks.workload.models.torch_cnn",
     "tensorflow": "benchmarks.workload.models.tensorflow_cnn",
-    "sklearn": "benchmarks.workload.models.sklearn_sgd",
-    "haiku": "benchmarks.workload.models.haiku_cnn",
 }
 
 
 def _validate(
     backend: str,
     regularizer: Optional[str],
-    dp: bool,
     scaffold: bool,
     secagg: Optional[str],
 ) -> None:
@@ -67,28 +62,15 @@ def _validate(
         raise ValueError(
             f"Invalid secagg '{secagg}'. Expected one of {_VALID_SECAGG}."
         )
-    if dp and backend != "torch":
-        raise ValueError(
-            "DP-SGD is only supported with backend='torch' "
-            "(opacus has no non-torch implementation)."
-        )
     if scaffold and backend != "torch":
-        # Scaffold modules are model-agnostic in declearn but the v1
-        # benchmark suite restricts scaffold runs to torch to keep the
-        # smoke-test surface manageable. Document blockers in NOTES.md
-        # before relaxing this.
         raise ValueError(
             "SCAFFOLD is restricted to backend='torch' in the v1 "
             "benchmark suite."
         )
 
 
-def _build_model(backend: str, dp: bool) -> Model:
-    if backend == "torch" and dp:
-        module_name = "benchmarks.workload.models.torch_cnn_dp"
-    else:
-        module_name = _BACKEND_MODEL_MODULE[backend]
-    module = importlib.import_module(module_name)
+def _build_model(backend: str) -> Model:
+    module = importlib.import_module(_BACKEND_MODEL_MODULE[backend])
     return module.build_model()
 
 
@@ -122,26 +104,16 @@ def _build_run_config(
     rounds: int,
     n_clients: int,
     batch_size: int,
-    dp: bool,
 ) -> FLRunConfig:
-    params = {
-        "rounds": rounds,
-        "register": {
+    return FLRunConfig.from_params(
+        rounds=rounds,
+        register={
             "min_clients": n_clients,
             "timeout": B.BASELINE_REGISTRATION_TIMEOUT,
         },
-        "training": {"batch_size": batch_size},
-        "evaluate": {"batch_size": B.BASELINE_EVAL_BATCH_SIZE},
-    }
-    if dp:
-        # FLRunConfig.from_params auto-enables Poisson sampling on
-        # `training` when `privacy` is set; do not override it here.
-        params["privacy"] = {
-            "budget": [5.0, 1e-5],
-            "sclip_norm": 1.0,
-            "accountant": "rdp",
-        }
-    return FLRunConfig.from_params(**params)
+        training={"batch_size": batch_size},
+        evaluate={"batch_size": B.BASELINE_EVAL_BATCH_SIZE},
+    )
 
 
 def _build_secagg(
@@ -149,37 +121,24 @@ def _build_secagg(
 ) -> tuple[Optional[SecaggConfigServer], List[Optional[SecaggConfigClient]]]:
     if secagg is None:
         return None, [None] * n_clients
+    # _validate guarantees secagg == "masking" here.
+    from declearn.secagg.masking import (  # noqa: PLC0415
+        MaskingSecaggConfigClient,
+        MaskingSecaggConfigServer,
+    )
+
     private_keys = [Ed25519PrivateKey.generate() for _ in range(n_clients)]
     public_keys = [key.public_key() for key in private_keys]
     id_keys = [
         IdentityKeys(prv, trusted=public_keys) for prv in private_keys
     ]
-    if secagg == "masking":
-        from declearn.secagg.masking import (  # noqa: PLC0415
-            MaskingSecaggConfigClient,
-            MaskingSecaggConfigServer,
-        )
-
-        server_cfg: SecaggConfigServer = MaskingSecaggConfigServer(
-            bitsize=64, clipval=1e8
-        )
-        client_cfgs: List[Optional[SecaggConfigClient]] = [
-            MaskingSecaggConfigClient(id_keys=keys) for keys in id_keys
-        ]
-        return server_cfg, client_cfgs
-    if secagg == "joye-libert":
-        from declearn.secagg.joye_libert import (  # noqa: PLC0415
-            JoyeLibertSecaggConfigClient,
-            JoyeLibertSecaggConfigServer,
-        )
-
-        server_cfg = JoyeLibertSecaggConfigServer(bitsize=64, clipval=1e8)
-        client_cfgs = [
-            JoyeLibertSecaggConfigClient(id_keys=keys) for keys in id_keys
-        ]
-        return server_cfg, client_cfgs
-    # Should be unreachable: _validate would have rejected this earlier.
-    raise ValueError(f"Unsupported secagg type '{secagg}'.")
+    server_cfg: SecaggConfigServer = MaskingSecaggConfigServer(
+        bitsize=64, clipval=1e8
+    )
+    client_cfgs: List[Optional[SecaggConfigClient]] = [
+        MaskingSecaggConfigClient(id_keys=keys) for keys in id_keys
+    ]
+    return server_cfg, client_cfgs
 
 
 def _build_clients(
@@ -213,12 +172,10 @@ def _build_clients(
     return clients
 
 
-# pylint: disable-next=too-many-arguments
-def build_benchmark(
+def build_benchmark(  # noqa: PLR0913 — flat axis API by design
     backend: str = B.BASELINE_BACKEND,
     n_clients: int = B.BASELINE_N_CLIENTS,
     regularizer: Optional[str] = None,
-    dp: bool = False,
     scaffold: bool = False,
     secagg: Optional[str] = None,
     rounds: int = B.BASELINE_ROUNDS,
@@ -229,20 +186,17 @@ def build_benchmark(
     Parameters
     ----------
     backend:
-        One of `"torch"`, `"tensorflow"`, `"sklearn"`, `"haiku"`.
+        One of `"torch"`, `"tensorflow"`.
     n_clients:
         Number of federated clients to spawn.
     regularizer:
-        Optional client-side loss regularizer. One of `None`, `"lasso"`,
-        `"ridge"`, `"fedprox"`.
-    dp:
-        Whether to enable client-local DP-SGD. Requires `backend="torch"`.
+        Optional client-side loss regularizer. One of `None`, `"ridge"`,
+        `"fedprox"`.
     scaffold:
         Whether to enable SCAFFOLD aux-var exchange. Requires
         `backend="torch"` in the v1 suite.
     secagg:
-        Optional secure-aggregation method. One of `None`, `"masking"`,
-        `"joye-libert"`.
+        Optional secure-aggregation method. One of `None`, `"masking"`.
     rounds:
         Number of federated training rounds.
     batch_size:
@@ -251,13 +205,14 @@ def build_benchmark(
     Raises
     ------
     ValueError
-        On invalid parameter combinations (e.g. DP on a non-torch backend).
+        On invalid parameter combinations (e.g. SCAFFOLD on a non-torch
+        backend in the v1 suite).
     """
-    _validate(backend, regularizer, dp, scaffold, secagg)
-    layout = _BACKEND_LAYOUT[backend]
-    server_model = _build_model(backend, dp)
+    _validate(backend, regularizer, scaffold, secagg)
+    layout = BACKEND_LAYOUT[backend]
+    server_model = _build_model(backend)
     optim = _build_optim(regularizer, scaffold)
-    run = _build_run_config(rounds, n_clients, batch_size, dp)
+    run = _build_run_config(rounds, n_clients, batch_size)
     server_secagg, client_secagg = _build_secagg(secagg, n_clients)
     clients = _build_clients(n_clients, layout, client_secagg)
     return BenchmarkSpec(
