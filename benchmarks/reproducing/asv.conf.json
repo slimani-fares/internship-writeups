@@ -1,12 +1,19 @@
-
 {
     "version": 1,
     "project": "declearn",
-    "project_url": "https://gitlab.inria.fr/magnet/declearn/declearn2",
-    "repo": "../../declearn",
-    "branches": ["develop", "patched-2.8.0"],
-    "environment_type": "existing",
-    "matrix": {},
+    "project_url": "https://gitlab.inria.fr/magnet/declearn/declearn",
+    "repo": "..",
+    "branches": ["develop"],
+    "environment_type": "virtualenv",
+    "install_command": [
+        "in-dir={env_dir} python -m pip install --quiet 'torch<=2.11' --index-url https://download.pytorch.org/whl/cu126",
+        "in-dir={env_dir} python -m pip install --quiet '{build_dir}[torch,tensorflow,websockets]'"
+    ],
+    "matrix": {
+        "asv": [""],
+        "pyyaml": [""],
+        "cryptography": [""]
+    },
     "benchmark_dir": ".",
     "env_dir": ".asv/env",
     "results_dir": ".asv/results",
