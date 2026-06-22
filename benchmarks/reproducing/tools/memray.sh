@@ -14,8 +14,10 @@
 #   OUTPUT=foo.bin ./benchmarks/tools/memray.sh --backend tensorflow
 #
 # Env vars:
-#   OUTPUT       target .bin capture path (default: <benchmarks>/.profiles/<timestamp>.bin)
-#                The HTML flame graph is written alongside it, as <OUTPUT>.html.
+#   OUTPUT       target .bin capture path (default: <benchmarks>/profiles/<timestamp>.bin).
+#                Relative paths are resolved against the caller's cwd, not the
+#                declearn repo root. The HTML flame graph is written alongside
+#                the capture, as <OUTPUT>.html.
 #   NATIVE       set to 1 to also record native (C/C++) allocation stacks, e.g.
 #                torch / tensorflow tensor allocations. Slower, larger capture.
 #   BENCH_VENV   default: $HOME/.venvs/declearn-bench-gpu
@@ -26,6 +28,11 @@ set -euo pipefail
 TOOLS_DIR="$(cd "$(dirname "$0")" && pwd)"
 BENCH_DIR="$(dirname "$TOOLS_DIR")"
 PROJECT_ROOT="$(dirname "$BENCH_DIR")"
+
+# Capture the caller's cwd before `cd`-ing away, so that a relative
+# `OUTPUT=foo.bin` lands where the user invoked the script from, not
+# at the declearn repo root.
+CALLER_PWD="$PWD"
 
 # `python -m benchmarks.tools.profile_entry` resolves only from the
 # parent of the `benchmarks/` package (the declearn repo root).
@@ -47,8 +54,13 @@ if ! command -v memray >/dev/null 2>&1; then
     exit 1
 fi
 
-DEFAULT_OUTPUT="${BENCH_DIR}/.profiles/$(date +%Y%m%d-%H%M%S).bin"
+DEFAULT_OUTPUT="${BENCH_DIR}/profiles/$(date +%Y%m%d-%H%M%S).bin"
 OUTPUT="${OUTPUT:-$DEFAULT_OUTPUT}"
+# Resolve a relative OUTPUT against the caller's cwd; absolute paths pass through.
+case "$OUTPUT" in
+    /*) ;;
+    *) OUTPUT="$CALLER_PWD/$OUTPUT" ;;
+esac
 FLAMEGRAPH="${OUTPUT%.bin}.html"
 mkdir -p "$(dirname "$OUTPUT")"
 

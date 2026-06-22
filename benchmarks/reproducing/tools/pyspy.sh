@@ -13,7 +13,9 @@
 #   OUTPUT=foo.json ./benchmarks/tools/pyspy.sh --backend tensorflow
 #
 # Env vars:
-#   OUTPUT       target JSON path (default: <benchmarks>/.profiles/<timestamp>.json)
+#   OUTPUT       target JSON path (default: <benchmarks>/profiles/<timestamp>.json).
+#                Relative paths are resolved against the caller's cwd, not the
+#                declearn repo root.
 #   RATE         py-spy sampling rate in Hz (default: 100)
 #   BENCH_VENV   default: $HOME/.venvs/declearn-bench-gpu
 #                Only used if no virtualenv is already active.
@@ -23,6 +25,11 @@ set -euo pipefail
 TOOLS_DIR="$(cd "$(dirname "$0")" && pwd)"
 BENCH_DIR="$(dirname "$TOOLS_DIR")"
 PROJECT_ROOT="$(dirname "$BENCH_DIR")"
+
+# Capture the caller's cwd before `cd`-ing away, so that a relative
+# `OUTPUT=foo.json` lands where the user invoked the script from, not
+# at the declearn repo root.
+CALLER_PWD="$PWD"
 
 # `python -m benchmarks.tools.profile_entry` resolves only from the
 # parent of the `benchmarks/` package (the declearn repo root).
@@ -44,8 +51,13 @@ if ! command -v py-spy >/dev/null 2>&1; then
     exit 1
 fi
 
-DEFAULT_OUTPUT="${BENCH_DIR}/.profiles/$(date +%Y%m%d-%H%M%S).json"
+DEFAULT_OUTPUT="${BENCH_DIR}/profiles/$(date +%Y%m%d-%H%M%S).json"
 OUTPUT="${OUTPUT:-$DEFAULT_OUTPUT}"
+# Resolve a relative OUTPUT against the caller's cwd; absolute paths pass through.
+case "$OUTPUT" in
+    /*) ;;
+    *) OUTPUT="$CALLER_PWD/$OUTPUT" ;;
+esac
 RATE="${RATE:-100}"
 mkdir -p "$(dirname "$OUTPUT")"
 
